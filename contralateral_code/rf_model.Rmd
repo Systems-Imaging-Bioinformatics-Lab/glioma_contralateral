@@ -1,0 +1,82 @@
+---
+title: "Contralateral Prediction"
+output: html_notebook
+---
+
+```{r}
+library(data.table)  # data table handling
+library(caret)  # data normalization
+library(coda) # monte carlo sims
+library(caTools) # sample splitting
+library(randomForest)
+library(pROC)
+library(ROCR)
+
+baseDir = file.path("C:", "Users", "ncwang","Box","1p19q Project")
+dataDir = file.path(baseDir,"Data","data_split_n4")
+outDir = file.path(dataDir,'outputs',"tum_models")
+# fName = file.path(dataDir,'patData_cmb.csv')
+fName = file.path(dataDir,'tumPatData.csv')
+filtData = read.csv(fName)
+
+fDT = data.table(filtData)
+
+i = 1
+set.seed(i)
+ind.train <- sample.split(fDT$X1p19q, SplitRatio = 0.7, group = fDT$patient)
+trainDT = fDT[ind.train,,]
+testDT = fDT[!ind.train,,]
+trY = as.factor(trainDT$X1p19q)
+testY = as.factor(testDT$X1p19q)
+
+trCols = names(trainDT)
+trFCols = grep("(_T1|_T2|_FLAIR|_T1post|_ADC)",trCols, value=T)
+fTrDT = trainDT[, trFCols, with=F]
+
+normParam = preProcess(fTrDT) # caret based normalization
+nTrDT = predict(normParam, fTrDT) # apply the normalization
+nTrDT[is.na(nTrDT)] = 0 # remova na
+
+corMat = cor(data.matrix(data.frame(nTrDT)), method = "pearson", use = "complete.obs")
+corMat[is.na(corMat)] = 0
+utCor = corMat * upper.tri(corMat,diag = FALSE)
+ftCorMask = colSums(abs(utCor) > .9)==0
+cNames = colnames(nTrDT)
+ftCorNames = cNames[ftCorMask]
+ftCorNames = ftCorNames[!is.na(ftCorNames)]
+
+nTrDT = nTrDT[,..ftCorNames]
+nTrDM = data.matrix(data.frame(transpose(nTrDT),row.names = colnames(nTrDT)), rownames.force = TRUE)
+
+# classifier <- KTSP.Train(inDF, psp, n=8)
+# classifier<- SWAP.Train.KTSP(nDM, as.factor(trPsp)) # expects a data matrix input with no nan, and transposed...
+
+fTestDT = testDT[,setdiff(names(testDT),c('X1p19q','patient','sliceNo')),with=FALSE]
+nTestDT = predict(normParam, fTestDT)
+nTestDT[is.na(nTestDT)] = 0 # remova na
+nTestDT = nTestDT[,..ftCorNames]
+nTestDM = data.matrix(data.frame(transpose(nTestDT),row.names = colnames(nTestDT)), rownames.force = TRUE)
+
+
+# # run prediction
+# # outM = SWAP.KTSP.Classify(nTestDM, classifier)
+# 
+# # SWAP.GetKTSP.PredictionStats(outM, as.factor(testPsp))
+# 
+# classifier <- SWAP.GetKTSP.TrainTestResults(trainMat = nTrDM,
+#                                             trainGroup = trPsp,
+#                                             testMat = nTestDM,
+#                                             testGroup = testPsp,
+#                                             krange = 3:15)
+# 
+# train.roc[i] = classifier$trainroc$auc
+# test.roc[i] = classifier$testroc$auc
+
+rf1 = randomForest(x= nTrDT,y=trY,xtest =nTestDT,ytest = testY,importance = TRUE,ntree = 500,
+                   strata = as.factor(trainDT$patient), nodesize = 5)
+predTests[[i]] = rf1$test$votes[,2]
+Labels[[i]] = testY
+rf_tr_roc=roc(trY,rf1$votes[,2],levels = levels(as.factor(trY)),direction = "<")
+rf_test_roc=roc(testY,rf1$test$votes[,2],levels = levels(as.factor(testY)),direction = "<")
+```
+

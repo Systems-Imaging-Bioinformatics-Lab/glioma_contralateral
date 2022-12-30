@@ -1,0 +1,25 @@
+name: tcia
+channels:
+  - conda-forge
+  - defaults
+  - radiomics
+dependencies:
+  - python=3.7
+  - pip
+  - numpy
+  - dipy
+  - nibabel
+  - scipy
+  - pandas
+  - nilearn
+  - matplotlib
+  - cloudpickle
+  - jupyter
+  - gudhi
+  - xlrd
+  - tensorflow=1.13.1
+  - fury # to stop a warning
+  - seaborn
+  - pip:
+    - pyradiomics
+    - keras
